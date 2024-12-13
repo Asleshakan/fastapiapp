@@ -1,0 +1,5 @@
+fastapi-azure-auth
+pydantic-settings
+uvicorn
+pydantic
+fastapi
