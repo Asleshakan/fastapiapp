@@ -1,46 +1,30 @@
-import uvicorn
-from fastapi import FastAPI, Security
+from fastapi import FastAPI,Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_azure_auth import SingleTenantAzureAuthorizationCodeBearer
-from pydantic import AnyHttpUrl, Field
-from pydantic_settings import BaseSettings
+import uvicorn
+from fastapi import FastAPI, Security
+import os
+from typing import Dict
 
+from settings import Settings
 
-class Settings(BaseSettings):
-    BACKEND_CORS_ORIGINS: list[AnyHttpUrl] = Field(
-        default=['http://localhost:8000'],
-        env="BACKEND_CORS_ORIGINS"
-    )
-    OPENAPI_CLIENT_ID: str = Field(..., env="OPENAPI_CLIENT_ID")
-    APP_CLIENT_ID: str = Field(..., env="APP_CLIENT_ID")
-    TENANT_ID: str = Field(..., env="TENANT_ID")
-    SCOPE_DESCRIPTION: str = Field(default="user_impersonation", env="SCOPE_DESCRIPTION")
+from pydantic import AnyHttpUrl,BaseModel
 
-    @property
-    def SCOPE_NAME(self) -> str:
-        return f'api://{self.APP_CLIENT_ID}/{self.SCOPE_DESCRIPTION}'
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
-    @property
-    def SCOPES(self) -> dict:
-        return {
-            self.SCOPE_NAME: self.SCOPE_DESCRIPTION,
-        }
-
-    @property
-    def OPENAPI_AUTHORIZATION_URL(self) -> str:
-        return f"https://login.microsoftonline.com/{self.TENANT_ID}/oauth2/v2.0/authorize"
-
-    @property
-    def OPENAPI_TOKEN_URL(self) -> str:
-        return f"https://login.microsoftonline.com/{self.TENANT_ID}/oauth2/v2.0/token"
-
-    class Config:
-        env_file = '.env'
-        env_file_encoding = 'utf-8'
-        case_sensitive = True
-
+from fastapi_azure_auth.user import User
 
 settings = Settings()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """
+    Load OpenID config on startup.
+    """
+    await azure_scheme.openid_config.load_config()
+    yield
+
 
 app = FastAPI(
     swagger_ui_oauth2_redirect_url='/oauth2-redirect',
@@ -66,19 +50,25 @@ azure_scheme = SingleTenantAzureAuthorizationCodeBearer(
     scopes=settings.SCOPES,
 )
 
-
-@app.on_event('startup')
-async def load_config() -> None:
-    """
-    Load OpenID config on startup.
-    """
-    await azure_scheme.openid_config.load_config()
+class User(BaseModel):
+    name: str
+    roles: list[str] = []
 
 
 @app.get("/", dependencies=[Security(azure_scheme)])
 async def root():
-    return {"message": "Hello World"}
+    print("Yo bro")
+    return {"whoIsTheBest": "DNA Team is"}
 
+@app.get("/test", dependencies=[Security(azure_scheme)])
+async def root():
+    print("Yo test")
+    return {"whoIsTheBest": "DNA Team is!"}
+
+@app.get("/me", dependencies=[Security(azure_scheme)])
+async def me(request: Request):
+    print("Me")
+    return User(roles=request.state.user.roles,name=request.state.user.name)
 
 if __name__ == '__main__':
-    uvicorn.run('main:app', reload=True)
+    uvicorn.run('main:app', reload=True) 
